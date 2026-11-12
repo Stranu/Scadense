@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="it" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Scadense</title>
+  <meta name="description" content="Scadense: scadenziario personale offline per tenere sotto controllo scadenze e rinnovi.">
+  <meta name="theme-color" content="#f5f6fb">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css">
+  <script>
+    // Applica il tema subito, per evitare lampi di colore.
+    (function () {
+      try {
+        var p = localStorage.getItem('scadense-theme') || 'auto';
+        var d = p === 'dark' || (p === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = d ? 'dark' : 'light';
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', d ? '#0f1020' : '#f5f6fb');
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <a class="skip" href="#view">Vai al contenuto</a>
+  <header class="app-header">
+    <div class="brand"><img src="icons/icon.svg" alt="" width="28" height="28"><span>Scadense</span></div>
+    <button type="button" id="sync-chip" class="sync-chip" hidden>Accedi</button>
+    <button type="button" class="icon-btn" id="theme-toggle" aria-label="Cambia tema chiaro o scuro">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </header>
+  <main id="view" tabindex="-1"><p class="muted loading">Caricamento…</p></main>
+  <div id="toast" class="toast-region" aria-live="polite" role="status"></div>
+  <nav class="bottom-nav" aria-label="Sezioni">
+    <a class="nav-link" href="#/">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      <span>Prossime</span></a>
+    <a class="nav-link" href="#/calendario">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      <span>Calendario</span></a>
+    <a class="nav-link" href="#/abbonamenti">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      <span>Abbonamenti</span></a>
+    <a class="nav-link" href="#/costi">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      <span>Costi</span></a>
+    <a class="nav-link" href="#/altro">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
+      <span>Altro</span></a>
+  </nav>
+  <noscript>Scadense richiede JavaScript per funzionare.</noscript>
+  <!-- Script classico (generato con node tools/build.mjs): funziona anche se il server serve .js come text/plain. -->
+  <script defer src="vendor/supabase.js"></script>
+  <script defer src="app.bundle.js"></script>
+  <script>
+    // Se dopo qualche secondo c'è ancora "Caricamento…" lo script non è partito: mostra un errore leggibile.
+    setTimeout(function () {
+      var m = document.getElementById('view');
+      if (m && m.querySelector('.loading') && !window.__scadenseStarted) {
+        m.innerHTML = '<div class="fatal" role="alert"><p>Scadense non è riuscita ad avviarsi.</p><p class="muted">Impossibile caricare i file dell\'app. Controlla la console del browser e ricarica la pagina.</p><button type="button" class="btn" onclick="location.reload()">Riprova</button></div>';
+      }
+    }, 6000);
+  </script>
+</body>
+</html>

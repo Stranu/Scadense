@@ -1,0 +1,28 @@
+# Artefatti di lavoro degli agenti / workflow (piani, task, review, script e screenshot di verifica)
+.agents/
+semantic-review/
+
+# Dipendenze di sviluppo (la libreria usata dall'app e' in vendor/ e va committata)
+node_modules/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Log e temporanei
+*.log
+*.tmp
+*.bak
+
+# Segreti e configurazioni locali
+.env
+.env.*
+*.pem
+*.key
+
+# Backup di dati esportati dall'app durante i test
+scadense-backup-*.json
+*.ics
