@@ -1,6 +1,6 @@
 /* Scadense service worker - offline cache con aggiornamento controllato */
 /* Cambia CACHE_VERSION a ogni release per forzare l'aggiornamento. */
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE = 'scadense-' + CACHE_VERSION;
 const ASSETS = [
   './',

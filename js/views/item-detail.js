@@ -1,7 +1,7 @@
 import { h, modal, sheetHeader, downloadFile } from '../ui.js';
 import { formatLong, formatShort } from '../dates.js';
 import { get, getCategories, historyOf } from '../db.js';
-import { badgeOf, formatMoney } from '../model.js';
+import { badgeOf, formatMoney, canPauseCancel } from '../model.js';
 import { describeRecurrence, hasEnd, progress, lastOccurrence, remainingTotal } from '../recurrence.js';
 import { buildICS } from '../ics.js';
 import { openItemForm } from './item-form.js';
@@ -45,8 +45,8 @@ export async function openItemDetail(id) {
         h('small', { class: 'muted' }, archived ? `${pr.total} rate su ${pr.total}` : `${pr.paid} pagate su ${pr.total}${pr.remaining ? ` · prossima: rata ${pr.paid + 1} di ${pr.total}` : ''}`)) : null,
       h('div', { class: 'btn-grid' },
         archived ? btn('Ripristina', 'btn-primary', 'restore') : doneBtn,
-        live && item.autoPay ? btn(item.paused ? 'Riprendi' : 'Metti in pausa', item.paused ? 'btn-primary' : '', 'pause') : null,
-        live && item.autoPay ? btn(item.cancelledOn ? 'Riattiva' : 'Disdici', '', 'cancel') : null,
+        live && canPauseCancel(item) ? btn(item.paused ? 'Riprendi' : 'Metti in pausa', item.paused ? 'btn-primary' : '', 'pause') : null,
+        live && canPauseCancel(item) ? btn(item.cancelledOn ? 'Riattiva' : 'Disdici', '', 'cancel') : null,
         live ? btn('Posticipa', '', 'postpone') : null,
         btn('Modifica', '', 'edit'),
         btn('Aggiungi al calendario (.ics)', '', 'ics'),

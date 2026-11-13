@@ -1,5 +1,5 @@
 import { diffDays, todayISO, addDays, addMonths, formatShort } from './dates.js';
-import { isRecurring, nextDue, isActiveSchedule, hasEnd, remainingCount, endFromCount, ITEM_END_LIMIT } from './recurrence.js';
+import { isRecurring, annualCost, nextDue, isActiveSchedule, hasEnd, remainingCount, endFromCount, ITEM_END_LIMIT } from './recurrence.js';
 import { transact, uuid, getAll, normalizeItem } from './db.js';
 
 export const GROUPS = [
@@ -14,6 +14,29 @@ export function daysLeft(item, today = todayISO()) {
 }
 
 export const isLive = isActiveSchedule;
+
+// Categoria "Abbonamenti": l'unico criterio per stare nella vista Abbonamenti (il pagamento automatico è indipendente).
+export const SUBSCRIPTION_CATEGORY_ID = 'abbonamenti';
+export const isSubscription = (item) => item.categoryId === SUBSCRIPTION_CATEGORY_ID
+  && (item.status === 'active' || (item.status === 'archived' && item.closedReason === 'cancelled'));
+// Pausa e disdetta: per i pagamenti automatici e per le voci della categoria Abbonamenti.
+export const canPauseCancel = (item) => !!item.autoPay || item.categoryId === SUBSCRIPTION_CATEGORY_ID;
+
+// Costo per categoria: annuo, oppure mensile (annuo / 12). In modalità mensile gli importi sono in centesimi
+// ripartiti con il metodo del resto più alto, così la somma delle righe coincide con il totale mensile arrotondato.
+export function costByCategory(items, cats, mode = 'annual') {
+  const rec = items.filter((i) => isLive(i) && isRecurring(i.recurrence) && i.amount > 0);
+  const rows = cats.map((c) => ({ c, v: rec.filter((i) => i.categoryId === c.id).reduce((s, i) => s + annualCost(i), 0) }))
+    .filter((x) => x.v > 0);
+  if (mode === 'monthly') {
+    const raw = rows.map((x) => (x.v / 12) * 100);
+    const cents = raw.map(Math.floor);
+    let left = Math.round(raw.reduce((s, v) => s + v, 0)) - cents.reduce((s, v) => s + v, 0);
+    raw.map((v, k) => [v - cents[k], k]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).forEach(([, k]) => { if (left > 0) { cents[k]++; left--; } });
+    rows.forEach((x, k) => { x.v = cents[k] / 100; });
+  }
+  return rows.filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
+}
 export function groupOf(item, today = todayISO()) {
   if (item.paused || item.cancelledOn) return 'dopo';
   let d = daysLeft(item, today);

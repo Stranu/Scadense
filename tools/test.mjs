@@ -4,7 +4,7 @@ import { addMonths, addDays, diffDays, isValidISO } from '../js/dates.js';
 import { nextDue, monthsOf, annualCost, occurrences, countOccurrences, endFromCount, remainingCount, lastOccurrence, remainingTotal, progress } from '../js/recurrence.js';
 import { buildICS, icsEscape } from '../js/ics.js';
 import { validateBackup, SCHEMA_VERSION } from '../js/backup.js';
-import { groupOf, sortByUrgency, badgeOf, planRollover } from '../js/model.js';
+import { groupOf, sortByUrgency, badgeOf, planRollover, isSubscription, canPauseCancel, costByCategory, SUBSCRIPTION_CATEGORY_ID } from '../js/model.js';
 import { normalizeItem, ITEM_DEFAULTS, wrapWriteStores, DEFAULT_CATEGORIES } from '../js/db.js';
 import { readFileSync } from 'node:fs';
 import { TABLES, toMs, toIso, stampOf, chunk, decideRemote, backoffDelay } from '../js/sync-core.js';
@@ -148,7 +148,34 @@ t('proiezioni costi con data di fine', () => {
   assert.deepEqual(occurrences({ ...f, paused: true }, '2025-06-01', '2026-06-01'), []);
   assert.equal(annualCost({ ...f, cancelledOn: '2025-09-01' }, '2025-06-01'), 0);
 });
-t('ics con UNTIL/COUNT', () => {
+t('Abbonamenti = solo categoria abbonamenti, indipendente da autoPay', () => {
+  const it = (o) => ({ id: 'x', title: 'x', categoryId: 'casa', status: 'active', autoPay: false, ...o });
+  assert.equal(SUBSCRIPTION_CATEGORY_ID, 'abbonamenti');
+  assert.ok(DEFAULT_CATEGORIES.some((c) => c.id === SUBSCRIPTION_CATEGORY_ID));
+  assert.equal(isSubscription(it({ categoryId: 'casa', autoPay: true })), false); // bolletta in addebito automatico
+  assert.equal(isSubscription(it({ categoryId: 'altro', autoPay: true })), false); // finanziamento
+  assert.equal(isSubscription(it({ categoryId: 'abbonamenti', autoPay: false })), true);
+  assert.equal(isSubscription(it({ categoryId: 'abbonamenti', autoPay: true, paused: true })), true);
+  assert.equal(isSubscription(it({ categoryId: 'abbonamenti', status: 'archived', closedReason: 'cancelled' })), true);
+  assert.equal(isSubscription(it({ categoryId: 'abbonamenti', status: 'archived', closedReason: 'concluded' })), false);
+  assert.equal(canPauseCancel(it({ autoPay: true })), true);
+  assert.equal(canPauseCancel(it({ categoryId: 'abbonamenti' })), true);
+  assert.equal(canPauseCancel(it({})), false);
+});
+t('costo mensile per categoria', () => {
+  const cats = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }, { id: 'c', name: 'C' }, { id: 'z', name: 'Z' }];
+  const it = (categoryId, amount, o = {}) => ({ id: categoryId + amount, categoryId, amount, status: 'active', recurrence: { unit: 'month', every: 1 }, dueDate: '2025-06-10', ...o });
+  const items = [it('a', 10), it('a', 100, { recurrence: { unit: 'year', every: 1 } }), it('b', 33.33, { recurrence: { unit: 'year', every: 1 } }), it('c', 7.77, { recurrence: { unit: 'year', every: 1 } }),
+    it('z', 50, { paused: true }), it('z', 50, { cancelledOn: '2025-09-01' }), it('z', 50, { status: 'archived' }), it('z', 50, { recurrence: { unit: 'none', every: 0 } })];
+  const annual = costByCategory(items, cats, 'annual');
+  assert.deepEqual(annual.map((x) => [x.c.id, x.v]), [['a', 220], ['b', 33.33], ['c', 7.77]]);
+  const monthly = costByCategory(items, cats, 'monthly');
+  assert.deepEqual(monthly.map((x) => x.c.id), ['a', 'b', 'c']); // pausa/disdetta/archiviate/non ricorrenti escluse
+  assert.equal(monthly[0].v, 18.33);
+  const totalM = Math.round(annual.reduce((s, x) => s + x.v, 0) / 12 * 100);
+  assert.equal(Math.round(monthly.reduce((s, x) => s + x.v * 100, 0)), totalM); // somma righe = totale mensile
+  assert.deepEqual(costByCategory([], cats, 'monthly'), []);
+});t('ics con UNTIL/COUNT', () => {
   const now = new Date('2025-01-01T00:00:00Z');
   const ics = (o) => buildICS([{ id: 'a', title: 'Mutuo', dueDate: '2025-01-15', recurrence: M1, amount: 5, remindDays: 3, ...o }], [], now);
   assert.ok(ics({ endDate: '2025-12-15' }).includes('RRULE:FREQ=MONTHLY;INTERVAL=1;UNTIL=20251215'));

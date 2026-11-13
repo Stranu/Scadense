@@ -21,7 +21,7 @@ export const TEMPLATES = [
   { title: 'Visita dentista', categoryId: 'salute', recurrence: m(6), remindDays: 14 },
   { title: 'Dichiarazione dei redditi', categoryId: 'tasse', recurrence: y(1), remindDays: 30 },
   { title: 'Garanzia elettrodomestico', categoryId: 'garanzie', recurrence: none, remindDays: 30 },
-  // Abbonamenti e rate con addebito automatico (nessun prezzo: lo inserisci tu).
+  // Abbonamenti (categoria Abbonamenti) e rata finanziamento (altro), tutti con addebito automatico; nessun prezzo: lo inserisci tu.
   ...['Netflix', 'Spotify', 'Amazon Prime', 'Disney+', 'YouTube Premium', 'iCloud / Google One', 'Abbonamento palestra']
     .map((title) => ({ title, categoryId: 'abbonamenti', recurrence: m(1), remindDays: 3, autoPay: true })),
   { title: 'Software in abbonamento (es. Microsoft 365)', categoryId: 'abbonamenti', recurrence: y(1), remindDays: 7, autoPay: true },

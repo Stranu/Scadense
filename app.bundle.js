@@ -1572,7 +1572,7 @@ __exp.occurrences = occurrences;
 });
 __def('js/model.js', function (__exp) {
 const { diffDays, todayISO, addDays, addMonths, formatShort } = __req('js/dates.js');
-const { isRecurring, nextDue, isActiveSchedule, hasEnd, remainingCount, endFromCount, ITEM_END_LIMIT } = __req('js/recurrence.js');
+const { isRecurring, annualCost, nextDue, isActiveSchedule, hasEnd, remainingCount, endFromCount, ITEM_END_LIMIT } = __req('js/recurrence.js');
 const { transact, uuid, getAll, normalizeItem } = __req('js/db.js');
 
 const GROUPS = [
@@ -1587,6 +1587,29 @@ function daysLeft(item, today = todayISO()) {
 }
 
 const isLive = isActiveSchedule;
+
+// Categoria "Abbonamenti": l'unico criterio per stare nella vista Abbonamenti (il pagamento automatico � indipendente).
+const SUBSCRIPTION_CATEGORY_ID = 'abbonamenti';
+const isSubscription = (item) => item.categoryId === SUBSCRIPTION_CATEGORY_ID
+  && (item.status === 'active' || (item.status === 'archived' && item.closedReason === 'cancelled'));
+// Pausa e disdetta: per i pagamenti automatici e per le voci della categoria Abbonamenti.
+const canPauseCancel = (item) => !!item.autoPay || item.categoryId === SUBSCRIPTION_CATEGORY_ID;
+
+// Costo per categoria: annuo, oppure mensile (annuo / 12). In modalit� mensile gli importi sono in centesimi
+// ripartiti con il metodo del resto pi� alto, cos� la somma delle righe coincide con il totale mensile arrotondato.
+function costByCategory(items, cats, mode = 'annual') {
+  const rec = items.filter((i) => isLive(i) && isRecurring(i.recurrence) && i.amount > 0);
+  const rows = cats.map((c) => ({ c, v: rec.filter((i) => i.categoryId === c.id).reduce((s, i) => s + annualCost(i), 0) }))
+    .filter((x) => x.v > 0);
+  if (mode === 'monthly') {
+    const raw = rows.map((x) => (x.v / 12) * 100);
+    const cents = raw.map(Math.floor);
+    let left = Math.round(raw.reduce((s, v) => s + v, 0)) - cents.reduce((s, v) => s + v, 0);
+    raw.map((v, k) => [v - cents[k], k]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).forEach(([, k]) => { if (left > 0) { cents[k]++; left--; } });
+    rows.forEach((x, k) => { x.v = cents[k] / 100; });
+  }
+  return rows.filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
+}
 function groupOf(item, today = todayISO()) {
   if (item.paused || item.cancelledOn) return 'dopo';
   let d = daysLeft(item, today);
@@ -1719,6 +1742,10 @@ const formatMoney = (n) =>
 __exp.GROUPS = GROUPS;
 __exp.daysLeft = daysLeft;
 __exp.isLive = isLive;
+__exp.SUBSCRIPTION_CATEGORY_ID = SUBSCRIPTION_CATEGORY_ID;
+__exp.isSubscription = isSubscription;
+__exp.canPauseCancel = canPauseCancel;
+__exp.costByCategory = costByCategory;
 __exp.groupOf = groupOf;
 __exp.sortByUrgency = sortByUrgency;
 __exp.badgeOf = badgeOf;
@@ -1803,7 +1830,7 @@ const TEMPLATES = [
   { title: 'Visita dentista', categoryId: 'salute', recurrence: m(6), remindDays: 14 },
   { title: 'Dichiarazione dei redditi', categoryId: 'tasse', recurrence: y(1), remindDays: 30 },
   { title: 'Garanzia elettrodomestico', categoryId: 'garanzie', recurrence: none, remindDays: 30 },
-  // Abbonamenti e rate con addebito automatico (nessun prezzo: lo inserisci tu).
+  // Abbonamenti (categoria Abbonamenti) e rata finanziamento (altro), tutti con addebito automatico; nessun prezzo: lo inserisci tu.
   ...['Netflix', 'Spotify', 'Amazon Prime', 'Disney+', 'YouTube Premium', 'iCloud / Google One', 'Abbonamento palestra']
     .map((title) => ({ title, categoryId: 'abbonamenti', recurrence: m(1), remindDays: 3, autoPay: true })),
   { title: 'Software in abbonamento (es. Microsoft 365)', categoryId: 'abbonamenti', recurrence: y(1), remindDays: 7, autoPay: true },
@@ -2188,7 +2215,7 @@ const dateModal = (label, intro, fieldLabel, okLabel, def, danger) => modal((clo
       h('button', { type: 'button', class: 'btn', onclick: () => close() }, 'Annulla'),
       h('button', { type: 'submit', class: `btn ${danger ? 'btn-danger' : 'btn-primary'}` }, okLabel)));
 }, { label });
-// Pausa / ripresa di un abbonamento.
+// Pausa / ripresa di un pagamento automatico o di un abbonamento.
 async function pauseFlow(item) {
   if (!item.paused) {
     const ok = await confirmDialog({ title: 'Metti in pausa', message: `"${item.title}" non verrà più addebitata né conteggiata nei costi finché non la riprendi.`, okLabel: 'Metti in pausa' });
@@ -2234,7 +2261,7 @@ __def('js/views/item-detail.js', function (__exp) {
 const { h, modal, sheetHeader, downloadFile } = __req('js/ui.js');
 const { formatLong, formatShort } = __req('js/dates.js');
 const { get, getCategories, historyOf } = __req('js/db.js');
-const { badgeOf, formatMoney } = __req('js/model.js');
+const { badgeOf, formatMoney, canPauseCancel } = __req('js/model.js');
 const { describeRecurrence, hasEnd, progress, lastOccurrence, remainingTotal } = __req('js/recurrence.js');
 const { buildICS } = __req('js/ics.js');
 const { openItemForm } = __req('js/views/item-form.js');
@@ -2278,8 +2305,8 @@ async function openItemDetail(id) {
         h('small', { class: 'muted' }, archived ? `${pr.total} rate su ${pr.total}` : `${pr.paid} pagate su ${pr.total}${pr.remaining ? ` · prossima: rata ${pr.paid + 1} di ${pr.total}` : ''}`)) : null,
       h('div', { class: 'btn-grid' },
         archived ? btn('Ripristina', 'btn-primary', 'restore') : doneBtn,
-        live && item.autoPay ? btn(item.paused ? 'Riprendi' : 'Metti in pausa', item.paused ? 'btn-primary' : '', 'pause') : null,
-        live && item.autoPay ? btn(item.cancelledOn ? 'Riattiva' : 'Disdici', '', 'cancel') : null,
+        live && canPauseCancel(item) ? btn(item.paused ? 'Riprendi' : 'Metti in pausa', item.paused ? 'btn-primary' : '', 'pause') : null,
+        live && canPauseCancel(item) ? btn(item.cancelledOn ? 'Riattiva' : 'Disdici', '', 'cancel') : null,
         live ? btn('Posticipa', '', 'postpone') : null,
         btn('Modifica', '', 'edit'),
         btn('Aggiungi al calendario (.ics)', '', 'ics'),
@@ -2518,7 +2545,11 @@ const { h } = __req('js/ui.js');
 const { getAll, getCategories } = __req('js/db.js');
 const { todayISO, addMonths, monthKey, MONTHS, formatShort } = __req('js/dates.js');
 const { annualCost, isRecurring, occurrences, hasEnd, progress, remainingTotal, lastOccurrence } = __req('js/recurrence.js');
-const { formatMoney, isLive } = __req('js/model.js');
+const { formatMoney, isLive, costByCategory } = __req('js/model.js');
+
+const MODE_KEY = 'scadense-costs-mode';
+const getMode = () => { try { return localStorage.getItem(MODE_KEY) === 'monthly' ? 'monthly' : 'annual'; } catch { return 'annual'; } };
+const setMode = (m) => { try { localStorage.setItem(MODE_KEY, m); } catch { /* preferenza non salvata */ } };
 
 async function render(root) {
   const [items, cats] = await Promise.all([getAll('items'), getCategories()]);
@@ -2526,8 +2557,9 @@ async function render(root) {
   const rec = active.filter((i) => isRecurring(i.recurrence) && i.amount > 0);
   const annual = rec.reduce((s, i) => s + annualCost(i), 0);
 
-  const byCat = cats.map((c) => ({ c, v: rec.filter((i) => i.categoryId === c.id).reduce((s, i) => s + annualCost(i), 0) }))
-    .filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
+  const mode = getMode();
+  const byCat = costByCategory(items, cats, mode);
+
   const maxCat = byCat[0]?.v || 1;
 
   // Prossimi 12 mesi: tutte le occorrenze attive con importo.
@@ -2557,7 +2589,10 @@ async function render(root) {
       h('div', { class: 'stat' }, h('strong', null, formatMoney(annual / 12)), h('span', null, 'equivalente al mese'))),
     !rec.length ? h('p', { class: 'muted' }, 'Aggiungi un importo alle scadenze ricorrenti per vedere la stima dei costi.') : null,
     h('section', { class: 'card' },
-      h('h2', { class: 'section-title' }, 'Per categoria (annuo)'),
+      h('h2', { class: 'section-title', id: 'cost-cat-title' }, `Per categoria (${mode === 'monthly' ? 'mensile' : 'annuo'})`),
+      h('div', { class: 'seg', role: 'group', 'aria-label': 'Periodo di riferimento' },
+        [['annual', 'Annuo'], ['monthly', 'Mensile']].map(([v, l]) =>
+          h('button', { type: 'button', class: 'seg-btn', 'aria-pressed': String(mode === v), onclick: async () => { setMode(v); await render(root); root.querySelector('.seg [aria-pressed=\'true\']')?.focus(); } }, l))),
       byCat.length
         ? h('ul', { class: 'bars' }, byCat.map(({ c, v }) => h('li', null,
           h('div', { class: 'bar-label' }, h('span', null, `${c.emoji} ${c.name}`), h('strong', null, formatMoney(v))),
@@ -2584,18 +2619,18 @@ __def('js/views/abbonamenti.js', function (__exp) {
 const { h } = __req('js/ui.js');
 const { getAll, getCategories } = __req('js/db.js');
 const { formatShort } = __req('js/dates.js');
-const { formatMoney, badgeOf } = __req('js/model.js');
+const { formatMoney, badgeOf, isSubscription, SUBSCRIPTION_CATEGORY_ID } = __req('js/model.js');
 const { annualCost, monthsOf } = __req('js/recurrence.js');
 const { TEMPLATES } = __req('js/templates.js');
 const { catChip } = __req('js/views/row.js');
 const { openItemDetail } = __req('js/views/item-detail.js');
 const { openItemForm } = __req('js/views/item-form.js');
-const NEW_SUB = { autoPay: true, categoryId: 'abbonamenti', recurrence: { unit: 'month', every: 1 } };
-// Vista Abbonamenti: voci con pagamento automatico, totali mensili/annuali e prossimo addebito.
+const NEW_SUB = { categoryId: SUBSCRIPTION_CATEGORY_ID, recurrence: { unit: 'month', every: 1 } };
+// Vista Abbonamenti: solo voci della categoria Abbonamenti (con o senza pagamento automatico), totali mensili/annuali e prossimo addebito.
 async function render(root) {
   const [items, cats] = await Promise.all([getAll('items'), getCategories()]);
   const catById = Object.fromEntries(cats.map((c) => [c.id, c]));
-  const subs = items.filter((i) => i.autoPay);
+  const subs = items.filter(isSubscription);
   const active = subs.filter((i) => i.status === 'active' && !i.paused && !i.cancelledOn).sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : a.title.localeCompare(b.title, 'it')));
   const paused = subs.filter((i) => i.status === 'active' && i.paused);
   const cancelled = subs.filter((i) => (i.status === 'active' && i.cancelledOn) || (i.status === 'archived' && i.closedReason === 'cancelled'));
@@ -2608,7 +2643,7 @@ async function render(root) {
     const archived = i.status === 'archived';
     const sub = [
       i.payMethod || null,
-      i.cancelledOn ? `Attivo fino al ${formatShort(i.cancelledOn)}` : archived ? null : `Prossimo addebito: ${formatShort(i.dueDate)}`,
+      i.cancelledOn ? `Attivo fino al ${formatShort(i.cancelledOn)}` : archived ? null : `${i.autoPay ? 'Prossimo addebito' : 'Prossimo rinnovo'}: ${formatShort(i.dueDate)}`,
       i.amount > 0 && m ? `≈ ${formatMoney(i.amount / m)}/mese` : null,
     ].filter(Boolean).join(' · ');
     return h('li', { class: 'row' },
@@ -2626,8 +2661,8 @@ async function render(root) {
     ? h('div', { class: 'empty' },
       h('div', { class: 'empty-art', 'aria-hidden': 'true' }, '🔁'),
       h('h2', null, 'Nessun abbonamento'),
-      h('p', { class: 'muted' }, 'Aggiungi i pagamenti che partono da soli: Scadense registra gli addebiti e ti avvisa prima.'),
-      h('div', { class: 'chips' }, TEMPLATES.filter((t) => t.autoPay).slice(0, 8).map((t) =>
+      h('p', { class: 'muted' }, 'Aggiungi i tuoi abbonamenti (streaming, software, palestra...): vedrai quanto spendi al mese e all\'anno e ti avvisiamo prima del rinnovo.'),
+      h('div', { class: 'chips' }, TEMPLATES.filter((t) => t.categoryId === SUBSCRIPTION_CATEGORY_ID).slice(0, 8).map((t) =>
         h('button', { type: 'button', class: 'chip', onclick: () => openItemForm({ prefill: { ...t, recurrence: { ...t.recurrence } } }) }, t.title))))
     : null;
   root.replaceChildren(...[
@@ -2635,7 +2670,7 @@ async function render(root) {
     h('div', { class: 'summary two' },
       h('div', { class: 'stat' }, h('strong', null, formatMoney(year / 12)), h('span', null, 'al mese')),
       h('div', { class: 'stat' }, h('strong', null, formatMoney(year)), h('span', null, 'all\'anno'))),
-    next ? h('p', { class: 'muted' }, `Prossimo addebito: ${next.title}, ${formatShort(next.dueDate)}${next.amount > 0 ? ' · ' + formatMoney(next.amount) : ''}`) : null,
+    next ? h('p', { class: 'muted' }, `${next.autoPay ? 'Prossimo addebito' : 'Prossimo rinnovo'}: ${next.title}, ${formatShort(next.dueDate)}${next.amount > 0 ? ' · ' + formatMoney(next.amount) : ''}`) : null,
     empty,
     section('Attivi', active), section('In pausa', paused), section('Disdetti', cancelled),
     h('button', { type: 'button', class: 'fab', onclick: () => openItemForm({ prefill: { ...NEW_SUB, recurrence: { ...NEW_SUB.recurrence } } }) }, h('span', { 'aria-hidden': 'true' }, '＋'), ' Abbonamento'),

@@ -2,7 +2,11 @@ import { h } from '../ui.js';
 import { getAll, getCategories } from '../db.js';
 import { todayISO, addMonths, monthKey, MONTHS, formatShort } from '../dates.js';
 import { annualCost, isRecurring, occurrences, hasEnd, progress, remainingTotal, lastOccurrence } from '../recurrence.js';
-import { formatMoney, isLive } from '../model.js';
+import { formatMoney, isLive, costByCategory } from '../model.js';
+
+const MODE_KEY = 'scadense-costs-mode';
+const getMode = () => { try { return localStorage.getItem(MODE_KEY) === 'monthly' ? 'monthly' : 'annual'; } catch { return 'annual'; } };
+const setMode = (m) => { try { localStorage.setItem(MODE_KEY, m); } catch { /* preferenza non salvata */ } };
 
 export async function render(root) {
   const [items, cats] = await Promise.all([getAll('items'), getCategories()]);
@@ -10,8 +14,9 @@ export async function render(root) {
   const rec = active.filter((i) => isRecurring(i.recurrence) && i.amount > 0);
   const annual = rec.reduce((s, i) => s + annualCost(i), 0);
 
-  const byCat = cats.map((c) => ({ c, v: rec.filter((i) => i.categoryId === c.id).reduce((s, i) => s + annualCost(i), 0) }))
-    .filter((x) => x.v > 0).sort((a, b) => b.v - a.v);
+  const mode = getMode();
+  const byCat = costByCategory(items, cats, mode);
+
   const maxCat = byCat[0]?.v || 1;
 
   // Prossimi 12 mesi: tutte le occorrenze attive con importo.
@@ -41,7 +46,10 @@ export async function render(root) {
       h('div', { class: 'stat' }, h('strong', null, formatMoney(annual / 12)), h('span', null, 'equivalente al mese'))),
     !rec.length ? h('p', { class: 'muted' }, 'Aggiungi un importo alle scadenze ricorrenti per vedere la stima dei costi.') : null,
     h('section', { class: 'card' },
-      h('h2', { class: 'section-title' }, 'Per categoria (annuo)'),
+      h('h2', { class: 'section-title', id: 'cost-cat-title' }, `Per categoria (${mode === 'monthly' ? 'mensile' : 'annuo'})`),
+      h('div', { class: 'seg', role: 'group', 'aria-label': 'Periodo di riferimento' },
+        [['annual', 'Annuo'], ['monthly', 'Mensile']].map(([v, l]) =>
+          h('button', { type: 'button', class: 'seg-btn', 'aria-pressed': String(mode === v), onclick: async () => { setMode(v); await render(root); root.querySelector('.seg [aria-pressed=\'true\']')?.focus(); } }, l))),
       byCat.length
         ? h('ul', { class: 'bars' }, byCat.map(({ c, v }) => h('li', null,
           h('div', { class: 'bar-label' }, h('span', null, `${c.emoji} ${c.name}`), h('strong', null, formatMoney(v))),

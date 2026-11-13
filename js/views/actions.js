@@ -112,7 +112,7 @@ const dateModal = (label, intro, fieldLabel, okLabel, def, danger) => modal((clo
       h('button', { type: 'button', class: 'btn', onclick: () => close() }, 'Annulla'),
       h('button', { type: 'submit', class: `btn ${danger ? 'btn-danger' : 'btn-primary'}` }, okLabel)));
 }, { label });
-// Pausa / ripresa di un abbonamento.
+// Pausa / ripresa di un pagamento automatico o di un abbonamento.
 export async function pauseFlow(item) {
   if (!item.paused) {
     const ok = await confirmDialog({ title: 'Metti in pausa', message: `"${item.title}" non verrà più addebitata né conteggiata nei costi finché non la riprendi.`, okLabel: 'Metti in pausa' });
