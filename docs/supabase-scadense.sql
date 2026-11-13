@@ -157,3 +157,13 @@ create policy "scadense_categories_update_own" on public.scadense_categories
 drop policy if exists "scadense_categories_delete_own" on public.scadense_categories;
 create policy "scadense_categories_delete_own" on public.scadense_categories
   for delete using (auth.uid() = user_id);
+
+-- ------------------------------------------------------------
+-- Permessi sulle tabelle per l'API (ruolo authenticated).
+-- Senza GRANT l'API risponde "permission denied" (401/403, codice 42501)
+-- anche con le policy RLS corrette. Nessun accesso per il ruolo anon.
+-- ------------------------------------------------------------
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on public.scadense_items      to authenticated;
+grant select, insert, update, delete on public.scadense_history    to authenticated;
+grant select, insert, update, delete on public.scadense_categories to authenticated;
